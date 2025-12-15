@@ -2,10 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
-
 describe('POST /api/webhooks/gate', function () {
     it('accepts valid gate certification payload', function () {
         $payload = [
