@@ -1,7 +1,17 @@
 <?php
 
-test('the application returns a successful response', function () {
-    $response = $this->get('/');
+declare(strict_types=1);
 
-    $response->assertStatus(200);
+describe('Application', function () {
+    it('returns a successful response for the homepage', function () {
+        $response = $this->get('/');
+
+        $response->assertOk();
+    });
+
+    it('has a health check endpoint', function () {
+        $response = $this->get('/up');
+
+        $response->assertOk();
+    });
 });

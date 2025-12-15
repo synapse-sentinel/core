@@ -1,5 +1,9 @@
 <?php
 
-test('that true is true', function () {
-    expect(true)->toBeTrue();
+declare(strict_types=1);
+
+describe('Unit', function () {
+    it('confirms basic assertions work', function () {
+        expect(true)->toBeTrue();
+    });
 });
