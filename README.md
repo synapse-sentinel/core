@@ -1,59 +1,123 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Synapse Sentinel Core
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Event intake system for Synapse Sentinel. Receives certification results from gate workflows and stores them as events using Laravel Verbs.
 
-## About Laravel
+## Architecture
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```
+Gate Workflow → POST /api/webhooks/gate → Core
+                                           ↓ stores events
+                                      Laravel Verbs
+                                           ↓ projects to
+                                      CertificationState
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Installation
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+```
 
-## Learning Laravel
+## Webhook Endpoint
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### POST /api/webhooks/gate
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Receives certification results from gate workflows.
 
-## Laravel Sponsors
+**Headers:**
+- `Content-Type: application/json`
+- `X-Gate-Signature: <hmac-sha256>` (optional, required if `GATE_WEBHOOK_SECRET` is set)
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+**Request Body:**
+```json
+{
+  "repository": "synapse-sentinel/core",
+  "sha": "abc123def456",
+  "verdict": "approved",
+  "reason": "All checks passed",
+  "checks": {
+    "tests": {"status": "pass", "coverage": 100},
+    "security": {"status": "pass"},
+    "syntax": {"status": "pass"}
+  },
+  "triggered_by": "pull_request",
+  "pr_number": 42
+}
+```
 
-### Premium Partners
+**Response:**
+```json
+{"message": "ok"}
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## Event Schema
 
-## Contributing
+### CertificationRequested
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Fired when a certification process begins.
 
-## Code of Conduct
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | string | yes | Full repository name (e.g., `owner/repo`) |
+| `sha` | string | yes | Git commit SHA |
+| `triggeredBy` | string | yes | What triggered the certification (`push`, `pull_request`, `workflow_dispatch`) |
+| `prNumber` | int | no | Pull request number if triggered by PR |
+| `branch` | string | no | Branch name |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### CertificationCompleted
 
-## Security Vulnerabilities
+Fired when certification finishes with a verdict.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | string | yes | Full repository name |
+| `sha` | string | yes | Git commit SHA |
+| `verdict` | string | yes | Result: `approved`, `rejected`, or `escalate` |
+| `reason` | string | no | Human-readable explanation |
+| `checks` | object | no | Detailed check results |
+| `triggeredBy` | string | no | What triggered the certification |
+| `prNumber` | int | no | Pull request number |
+
+### CertificationFailed
+
+Fired when certification encounters an error (distinct from rejection).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | string | yes | Full repository name |
+| `sha` | string | yes | Git commit SHA |
+| `error` | string | yes | Error message |
+| `stage` | string | no | Which stage failed (`tests`, `build`, `security`) |
+| `context` | object | no | Additional error context |
+
+## State Projection
+
+Events are projected to `CertificationState` which tracks:
+
+- `status`: `pending`, `completed`, or `failed`
+- `verdict`: `approved`, `rejected`, or `escalate` (when completed)
+- `repository`, `sha`, `branch`, `pr_number`
+- Timestamps: `requested_at`, `completed_at`, `failed_at`
+
+Query state:
+```php
+$state = CertificationState::load($certification_id);
+$state->isApproved();  // bool
+$state->isRejected();  // bool
+$state->isPending();   // bool
+$state->isFailed();    // bool
+```
+
+## Testing
+
+```bash
+php artisan test
+php artisan test --coverage
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+GPL-3.0-or-later

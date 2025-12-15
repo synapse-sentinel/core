@@ -9,7 +9,7 @@ use Carbon\CarbonImmutable;
 use Thunk\Verbs\Attributes\Autodiscovery\StateId;
 use Thunk\Verbs\Event;
 
-class CertificationCompleted extends Event
+class CertificationRequested extends Event
 {
     #[StateId(CertificationState::class)]
     public ?int $certification_id = null;
@@ -17,23 +17,19 @@ class CertificationCompleted extends Event
     public function __construct(
         public string $repository,
         public string $sha,
-        public string $verdict,
-        public ?string $reason = null,
-        public ?array $checks = null,
-        public ?string $triggeredBy = null,
+        public string $triggeredBy,
         public ?int $prNumber = null,
+        public ?string $branch = null,
     ) {}
 
     public function apply(CertificationState $state): void
     {
         $state->repository = $this->repository;
         $state->sha = $this->sha;
-        $state->status = 'completed';
-        $state->verdict = $this->verdict;
-        $state->reason = $this->reason;
-        $state->checks = $this->checks;
         $state->triggered_by = $this->triggeredBy;
         $state->pr_number = $this->prNumber;
-        $state->completed_at = CarbonImmutable::now();
+        $state->branch = $this->branch;
+        $state->status = 'pending';
+        $state->requested_at = CarbonImmutable::now();
     }
 }
